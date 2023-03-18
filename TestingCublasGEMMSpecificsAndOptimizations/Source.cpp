@@ -28,9 +28,50 @@ void CurandGenerateUniformf16(curandGenerator_t generator, __half* output, uint3
 	CurandNormalizef16 << <std::ceil(0.0009765625f * size), 1024 >> > (output, size, min, (max - min) * 0.0000152590218967f);
 }
 
+__global__ void CurandNormalizef16v2(__half* output, uint32_t size)
+{
+	uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
+	if (index < size)
+	{
+		//__half range = __float2half(1.0f * 0.0000152590218967f);// 0x100
+		uint16_t outputBits = *(uint16_t*)(output + index);
+		uint16_t outputMantissa = outputBits & 0x3FF | 0x400;
+		uint16_t outputExponent = outputBits & 0xf7800;
+		uint16_t rangeBits = 0x100;
+		uint32_t resultMantissa = 0;
+		while (rangeBits)
+		{
+			resultMantissa += (rangeBits & 1) * outputMantissa;
+			rangeBits >>= 1;
+			outputMantissa <<= 1;
+		}
+		while (resultMantissa & 0xf800)
+		{
+			resultMantissa >>= 1;
+			outputExponent++;
+		}
+		if (resultMantissa & 0x3ff)
+		{
+			while (~resultMantissa & 0x400)
+			{
+				resultMantissa <<= 1;
+				outputExponent--;
+			}
+		}
+		uint16_t result = outputBits & 0x8000 | outputExponent | resultMantissa;
+		output[index] = *(__half*)&result;
+	}
+}
+
+void CurandGenerateUniformf16v2(curandGenerator_t generator, __half* output, uint32_t size)
+{
+	curandGenerate(generator, (uint32_t*)output, (size >> 1) + (size & 1));
+	CurandNormalizef16v2 <<<std::ceil(0.0009765625f * size), 1024 >>> (output, size);
+}
+
 int main()
 {
-	const uint32_t INPUTS = 100000000;
+	const uint32_t INPUTS = 5;// 100000000;
 
 	curandGenerator_t curandGenerator;
 	curandCreateGenerator(&curandGenerator, CURAND_RNG_PSEUDO_DEFAULT);
@@ -46,17 +87,18 @@ int main()
 	cudaMalloc(&inputGPU, INPUTS * sizeof(__half));
 
 	cudaEventRecord(start);
-	for (uint32_t i = 10; i--;)
+	for (uint32_t i = 1; i--;)
 		CurandGenerateUniformf16(curandGenerator, inputGPU, INPUTS);
+		//CurandGenerateUniformf16v2(curandGenerator, inputGPU, INPUTS);
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&milliseconds, start, stop);
 	printf("Time taken: %f ms\n", milliseconds);
 
 	cudaMemcpy(input, inputGPU, INPUTS * sizeof(__half), cudaMemcpyDeviceToHost);
-	//PrintMatrixf16(input, INPUTS, 1, "Input");
+	PrintMatrixf16(input, INPUTS, 1, "Input");
 
-	uint32_t arr[100] = {};
+	/*uint32_t arr[100] = {};
 	for (uint32_t i = INPUTS; i--;)
 	{
 		arr[uint32_t(__half2float(input[i]) * 40 + 50)]++;
@@ -69,7 +111,7 @@ int main()
 			printf("*");
 		printf("\n");
 	}
-	printf("Histogram End");
+	printf("Histogram End");*/
 
 	return 0;
 }
