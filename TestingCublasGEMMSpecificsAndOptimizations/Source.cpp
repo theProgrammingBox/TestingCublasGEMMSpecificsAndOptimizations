@@ -20,7 +20,6 @@ __global__ void CurandNormalizef16(__half* output, uint32_t size, float min, flo
 	uint32_t index = blockIdx.x * blockDim.x + threadIdx.x;
 	if (index < size)
 		output[index] = __float2half(*(uint16_t*)(output + index) * range + min);
-	//__habs
 }
 
 void CurandGenerateUniformf16(curandGenerator_t generator, __half* output, uint32_t size, float min = -1.0f, float max = 1.0f)
@@ -31,16 +30,29 @@ void CurandGenerateUniformf16(curandGenerator_t generator, __half* output, uint3
 
 int main()
 {
-	const uint32_t INPUTS = 100000;
+	const uint32_t INPUTS = 100000000;
 
 	curandGenerator_t curandGenerator;
 	curandCreateGenerator(&curandGenerator, CURAND_RNG_PSEUDO_DEFAULT);
 	curandSetPseudoRandomGeneratorSeed(curandGenerator, 0);
 
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	float milliseconds;
+
 	__half* input = new __half[INPUTS];
 	__half* inputGPU;
 	cudaMalloc(&inputGPU, INPUTS * sizeof(__half));
-	CurandGenerateUniformf16(curandGenerator, inputGPU, INPUTS);
+
+	cudaEventRecord(start);
+	for (uint32_t i = 10; i--;)
+		CurandGenerateUniformf16(curandGenerator, inputGPU, INPUTS);
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	printf("Time taken: %f ms\n", milliseconds);
+
 	cudaMemcpy(input, inputGPU, INPUTS * sizeof(__half), cudaMemcpyDeviceToHost);
 	//PrintMatrixf16(input, INPUTS, 1, "Input");
 
