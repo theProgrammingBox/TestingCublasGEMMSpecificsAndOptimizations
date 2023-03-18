@@ -71,7 +71,7 @@ void CurandGenerateUniformf16v2(curandGenerator_t generator, __half* output, uin
 
 int main()
 {
-	const uint32_t INPUTS = 5;// 100000000;
+	const uint32_t INPUTS = 10;// 100000000;
 
 	curandGenerator_t curandGenerator;
 	curandCreateGenerator(&curandGenerator, CURAND_RNG_PSEUDO_DEFAULT);
