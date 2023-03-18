@@ -39,27 +39,34 @@ __global__ void CurandNormalizef16v2(__half* output, uint32_t size)
 		uint16_t rangeMantissa = rangeBits & 0x3FF | 0x400;
 		uint16_t rangeExponent = rangeBits & 0x7c00;
 		uint32_t resultMantissa = 0;
+
 		while (outputBits)
 		{
 			resultMantissa += (outputBits & 1) * rangeMantissa;
 			outputBits >>= 1;
 			rangeMantissa <<= 1;
 		}
+
 		resultMantissa >>= 10;
+
 		while (resultMantissa & 0xf800)
 		{
 			resultMantissa >>= 1;
-			rangeExponent++;
+			rangeExponent += 0x400;
 		}
+
 		if (resultMantissa & 0x3ff)
 		{
 			while (~resultMantissa & 0x400)
 			{
 				resultMantissa <<= 1;
-				rangeExponent--;
+				rangeExponent -= 0x400;
 			}
 		}
-		uint16_t result = rangeBits & 0x8000 | rangeExponent | resultMantissa;
+
+		rangeExponent ^= 0x4000;
+		rangeExponent += 0x400;
+		uint16_t result = rangeBits & 0x8000 | (rangeExponent & 0x7c00) | (resultMantissa & 0x3ff);
 		output[index] = *(__half*)&result;
 	}
 }
@@ -72,99 +79,11 @@ void CurandGenerateUniformf16v2(curandGenerator_t generator, __half* output, uin
 
 int main()
 {
-	__half range = __float2half(0.0000152590218967f);
-	uint16_t outputBits = 1;// 0xffff;
-	uint16_t rangeBits = *(uint16_t*)&range;
-	uint16_t rangeMantissa = rangeBits & 0x3FF | 0x400;
-	uint16_t rangeExponent = rangeBits & 0x7c00;
-	uint32_t resultMantissa = 0;
-
-	for (int32_t i = 15; i >= 0; i--)
-	{
-		printf("%d", (rangeBits >> i) & 1);
-		if (i == 15 || i == 10) printf(" ");
-	}
-	printf("\n");
-
-	for (int32_t i = 15; i >= 0; i--)
-	{
-		printf("%d", (rangeMantissa >> i) & 1);
-		if (i == 15 || i == 10) printf(" ");
-	}
-	printf("\n");
-
-	for (int32_t i = 15; i >= 0; i--)
-	{
-		printf("%d", (rangeExponent >> i) & 1);
-		if (i == 15 || i == 10) printf(" ");
-	}
-	printf("\n");
-
-	while (outputBits)
-	{
-		resultMantissa += (outputBits & 1) * rangeMantissa;
-		outputBits >>= 1;
-		rangeMantissa <<= 1;
-	}
-
-	for (int32_t i = 31; i >= 0; i--)
-	{
-		printf("%d", (resultMantissa >> i) & 1);
-		if (i == 31 || i == 23) printf(" ");
-	}
-	printf("\n");
-
-	resultMantissa >>= 10;
-
-	for (int32_t i = 31; i >= 0; i--)
-	{
-		printf("%d", (resultMantissa >> i) & 1);
-		if (i == 31 || i == 23) printf(" ");
-	}
-	printf("\n");
-
-	while (resultMantissa & 0xf800)
-	{
-		resultMantissa >>= 1;
-		rangeExponent += 0x400;
-	}
-	if (resultMantissa & 0x3ff)
-	{
-		while (~resultMantissa & 0x400)
-		{
-			resultMantissa <<= 1;
-			rangeExponent -= 0x400;
-		}
-	}
-
-	for (int32_t i = 15; i >= 0; i--)
-	{
-		printf("%d", (rangeExponent >> i) & 1);
-		if (i == 15 || i == 10) printf(" ");
-	}
-	printf("\n");
-
-	rangeExponent ^= 0x4000;
-	rangeExponent += 0x400;
-
-	uint16_t result = rangeBits & 0x8000 | (rangeExponent & 0x7c00) | (resultMantissa & 0x3ff);
-
-	for (int32_t i = 15; i >= 0; i--)
-	{
-		printf("%d", (result >> i) & 1);
-		if (i == 15 || i == 10) printf(" ");
-	}
-	printf("\n");
-
-	__half out = *(__half*)&result;
-	printf("%f\n", __half2float(out));
-	return 0;
-
 	const uint32_t INPUTS = 20;// 100000000;
 
 	curandGenerator_t curandGenerator;
 	curandCreateGenerator(&curandGenerator, CURAND_RNG_PSEUDO_DEFAULT);
-	curandSetPseudoRandomGeneratorSeed(curandGenerator, 0);
+	curandSetPseudoRandomGeneratorSeed(curandGenerator, 0x87fe75f);
 
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
@@ -176,9 +95,9 @@ int main()
 	cudaMalloc(&inputGPU, INPUTS * sizeof(__half));
 
 	cudaEventRecord(start);
-	for (uint32_t i = 1; i--;)
-		//CurandGenerateUniformf16(curandGenerator, inputGPU, INPUTS);
-		CurandGenerateUniformf16v2(curandGenerator, inputGPU, INPUTS);
+	for (uint32_t i = 100; i--;)
+		CurandGenerateUniformf16(curandGenerator, inputGPU, INPUTS);
+		//CurandGenerateUniformf16v2(curandGenerator, inputGPU, INPUTS);
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&milliseconds, start, stop);
